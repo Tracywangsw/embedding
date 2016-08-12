@@ -4,8 +4,9 @@ import numpy as np
 import theano
 import theano.tensor as T
 import pdb
+from datetime import *
 
-data = load_data.Data('data/r.train','data/r.test')
+data = load_data.Data('data/r1.train','data/r1.test')
 
 class Train(object):
   """docstring for ClassName"""
@@ -42,10 +43,9 @@ class Train(object):
         if p_distance+self.margin-n_distance>0:
           self.loss += p_distance+self.margin-n_distance
           self.SGD(p_user,p_item,p_relation,n_user,n_item,n_relation)
-        # print(str(self.loss))
       self.loss /= self.train_num
       precision = self.predict()
-      print('epoch:'+str(epoch)+' loss:'+str(self.loss)+' precision:'+str(precision.tolist()))
+      print('time:'+str(datetime.now())+' epoch:'+str(epoch)+' loss:'+str(self.loss)+' precision:'+str(precision.tolist()))
 
   def predict(self):
     precision = np.array([0]*3,dtype='double')
