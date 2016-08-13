@@ -5,6 +5,7 @@ import theano
 import theano.tensor as T
 import pdb
 from datetime import *
+import csv
 
 data = load_data.Data('data/r1.train','data/r1.test')
 
@@ -26,8 +27,9 @@ class Train(object):
     self.relation_vec = np.random.uniform(-6/math.sqrt(self.n),6/math.sqrt(self.n),(self.relation_num,self.n))
     self.graident_function = self.graident()
 
-  def run(self):
-    nepoch = 1000
+  def run(self,path):
+    nepoch = 100
+    res_log = []
     for epoch in range(nepoch):
       self.loss = 0
       for i in range(self.train_num):
@@ -46,6 +48,10 @@ class Train(object):
       self.loss /= self.train_num
       precision = self.predict()
       print('time:'+str(datetime.now())+' epoch:'+str(epoch)+' loss:'+str(self.loss)+' precision:'+str(precision.tolist()))
+      res_log.append([self.loss]+precision.tolist())
+    with open(path,'w') as f:
+      a = csv.writer(f,delimiter=',')
+      a.writerows(res_log)
 
   def predict(self):
     precision = np.array([0]*3,dtype='double')
@@ -140,5 +146,11 @@ class Train(object):
     self.relation_vec[n_relation,:] /= np.linalg.norm(self.relation_vec[n_relation,:])
 
 if __name__ == "__main__":
-  rr = Train(20,1,0.01,0.001)
-  rr.run()
+  dem = [10,20,30]
+  learning_rate = [0.05,0.01,0.005,0.001]
+  for d in dem:
+    for r in learning_rate:
+      rr = Train(d,1,r,0.001)
+      filename = str([d,r])+'.csv'
+      print(filename)
+      rr.run('result/TransE/'+filename)

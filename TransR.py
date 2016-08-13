@@ -5,6 +5,7 @@ import theano
 import theano.tensor as T
 import pdb
 from datetime import *
+import csv
 
 data = load_data.Data('data/r1.train','data/r1.test')
 
@@ -36,8 +37,9 @@ class Train(object):
       tensor[i][:][:] = np.eye(n,k)
     return tensor
 
-  def run(self):
-    nepoch = 1000
+  def run(self,path):
+    nepoch = 100
+    res_log = []
     for epoch in range(nepoch):
       self.loss = 0
       for i in range(self.train_num):
@@ -56,6 +58,11 @@ class Train(object):
       self.loss /= self.train_num
       precision = self.predict()
       print('time:'+str(datetime.now())+' epoch:'+str(epoch)+' loss:'+str(self.loss)+' precision:'+str(precision.tolist()))
+      res_log.append([self.loss]+precision.tolist())
+    with open(path,'w') as f:
+      a = csv.writer(f,delimiter=',')
+      a.writerows(res_log)
+
 
   def predict(self):
     precision = np.array([0]*3,dtype='double')
@@ -168,5 +175,11 @@ class Train(object):
     self.item_mapping_tensor[n_relation,:,:] /= np.linalg.norm(self.item_mapping_tensor[n_relation,:,:])
 
 if __name__ == "__main__":
-  rr = Train(30,20,15,1,0.005,0.001)
-  rr.run()
+  user_dem = [[20,20,20],[30,20,20],[20,20,30],[20,30,20],[30,20,10],[20,30,10],[10,20,30]]
+  learning_rate = [0.05,0.01,0.005,0.001]
+  for d in user_dem:
+    for r in learning_rate:
+      rr = Train(d[0],d[1],d[2],1,r,0.001)
+      filename = str(d+[r])+'.csv'
+      print(filename)
+      rr.run('result/TransR/'+filename)
