@@ -26,10 +26,31 @@ class Train(object):
     self.item_vec = np.random.uniform(-6/math.sqrt(self.n),6/math.sqrt(self.n),(self.item_num,self.n))
     self.relation_vec = np.random.uniform(-6/math.sqrt(self.n),6/math.sqrt(self.n),(self.relation_num,self.n))
     self.graident_function = self.graident()
+    self.loss = self.loss_init()
+
+  def loss_init(self):
+    loss = 0
+    for i in range(self.train_num):
+      record = data.train_matrix[i,:]
+      p_user = data.userid2seq[record[0]]
+      p_item = data.itemid2seq[record[1]]
+      p_relation = data.relation2seq[record[2]]
+      n_user = p_user
+      n_item = p_item
+      n_relation = self.negative_sampling(p_relation)
+      p_distance = self.cal_distance(p_user,p_item,p_relation)
+      n_distance = self.cal_distance(n_user,n_item,n_relation)
+      if p_distance+self.margin-n_distance>0:
+        loss += p_distance+self.margin-n_distance
+    loss /= self.train_num
+    return loss
 
   def run(self,path):
     nepoch = 100
-    res_log = []
+    predict_init,dis_init = self.predict()
+    res_log = [[self.loss]+predict_init+dis_init]
+    print('time:'+str(datetime.now())+' epoch:'+str(0)+' loss:'+str(self.loss)+' precision:'+str(predict_init))
+    print('hit rating ratio(from 1 to 5):'+str(dis_init))
     for epoch in range(nepoch):
       self.loss = 0
       for i in range(self.train_num):
@@ -46,26 +67,34 @@ class Train(object):
           self.loss += p_distance+self.margin-n_distance
           self.SGD(p_user,p_item,p_relation,n_user,n_item,n_relation)
       self.loss /= self.train_num
-      precision = self.predict()
-      print('time:'+str(datetime.now())+' epoch:'+str(epoch)+' loss:'+str(self.loss)+' precision:'+str(precision.tolist()))
+      precision,dis = self.predict()
+      print('time:'+str(datetime.now())+' epoch:'+str(epoch+1)+' loss:'+str(self.loss)+' precision:'+str(precision))
+      print('hit rating ratio(from 1 to 5):'+str(dis))
       res_log.append([self.loss]+precision.tolist())
     with open(path,'w') as f:
       a = csv.writer(f,delimiter=',')
       a.writerows(res_log)
 
-  def predict(self):
-    precision = np.array([0]*3,dtype='double')
+  def predict(self,n=1):
+    precision = np.array([0]*n,dtype='double')
+    hit_relations = [0]*5
+    test_relations = [0]*5
+    hit = 0
     for i in range(self.test_num):
       test_tuple = data.test_matrix[i,:]
       user = data.userid2seq[test_tuple[0]]
       item = data.itemid2seq[test_tuple[1]]
       relation = data.relation2seq[test_tuple[2]]
-      for top in range(3):
+      test_relations[relation] += 1
+      for top in range(n):
         rels = self.res_relations(user,item,top+1)
         if relation in rels:
+          hit += 1
+          hit_relations[relation] += 1
           precision[top] += 1
     precision /= self.test_num
-    return precision
+    hit_relation_precision = [float(r[0])/r[1] for r in zip(hit_relations,test_relations)]
+    return precision.tolist(),hit_relation_precision
 
   def res_relations(self,user,item,top_n):
     user_vec = self.user_vec[user,:]
@@ -146,8 +175,8 @@ class Train(object):
     self.relation_vec[n_relation,:] /= np.linalg.norm(self.relation_vec[n_relation,:])
 
 if __name__ == "__main__":
-  dem = [10,20,30]
-  learning_rate = [0.05,0.01,0.005,0.001]
+  dem = [20,30]
+  learning_rate = [0.05,0.01]
   for d in dem:
     for r in learning_rate:
       rr = Train(d,1,r,0.001)
