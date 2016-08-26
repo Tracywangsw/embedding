@@ -23,19 +23,18 @@ class Train(object):
     self.user_num = len(data.userid2seq)
     self.item_num = len(data.itemid2seq)
     self.relation_num = len(data.relation2seq)/2
-    self.user_vec = np.random.uniform(-6/math.sqrt(self.n),6/math.sqrt(self.n),(self.user_num,self.n))
-    self.item_vec = np.random.uniform(-6/math.sqrt(self.m),6/math.sqrt(self.m),(self.item_num,self.m))
-    self.relation_vec = np.random.uniform(-6/math.sqrt(self.k),6/math.sqrt(self.k),(self.relation_num,self.k))
-    self.user_mapping_tensor = self.generate_eye_tensor(self.n,self.k)
-    self.item_mapping_tensor = self.generate_eye_tensor(self.m,self.k)
+    self.user_vec = theano.shared(np.asarray(np.random.uniform(-6/math.sqrt(self.n),6/math.sqrt(self.n),(self.user_num,self.n)),dtype='float32'),name='user')
+    self.item_vec = theano.shared(np.asarray(np.random.uniform(-6/math.sqrt(self.m),6/math.sqrt(self.m),(self.item_num,self.m)),dtype='float32'),name='item')
+    self.relation_vec = theano.shared(np.asarray(np.random.uniform(-6/math.sqrt(self.k),6/math.sqrt(self.k),(self.relation_num,self.k)),dtype='float32'),name='relation')
+    self.relatioin_mapping_matrix = theano.shared(np.asarray(self.generate_mapping_matrix(self.n),dtype='float32'),name='map_matrix')
     self.graident_function = self.graident()
     self.loss = self.loss_init()
 
-  def generate_eye_tensor(self,n,k):
-    tensor = np.ones((self.relation_num,n,k))
+  def generate_mapping_matrix(self,n):
+    m = np.random.rand(self.relation_num,n)
     for i in range(self.relation_num):
-      tensor[i][:][:] = np.eye(n,k)
-    return tensor
+      m[i][:] /= np.linalg.norm(m[i][:])
+    return m
 
   def loss_init(self):
     loss = 0
@@ -60,9 +59,6 @@ class Train(object):
     res_log = [[self.loss]+predict_init+dis_init]
     print('time:'+str(datetime.now())+' epoch:'+str(0)+' loss:'+str(self.loss)+' precision:'+str(predict_init))
     print('hit rating ratio(from 1 to 5):'+str(dis_init))
-    # predict_init = self.top_item_recommend()
-    # res_log = [[self.loss,predict_init]]
-    # print('time:'+str(datetime.now())+' epoch:'+str(0)+' loss:'+str(self.loss)+' precision:'+str(predict_init))
     for epoch in range(nepoch):
       self.loss = 0
       for i in range(self.train_num):
@@ -83,9 +79,6 @@ class Train(object):
       print('time:'+str(datetime.now())+' epoch:'+str(epoch+1)+' loss:'+str(self.loss)+' precision:'+str(precision))
       print('hit rating ratio(from 1 to 5):'+str(dis))
       res_log.append([self.loss]+precision+dis)
-      # precision = self.top_item_recommend()
-      # print('time:'+str(datetime.now())+' epoch:'+str(epoch)+' loss:'+str(self.loss)+' precision:'+str(precision))
-      # res_log.append([self.loss,precision])
     with open(path,'w') as f:
       a = csv.writer(f,delimiter=',')
       a.writerows(res_log)
@@ -183,26 +176,40 @@ class Train(object):
     user_vec = self.user_vec[user,:]
     item_vec = self.item_vec[item,:]
     relation_vec = self.relation_vec[relation,:]
-    user_mat = self.user_mapping_tensor[relation,:,:]
-    item_mat = self.item_mapping_tensor[relation,:,:]
-    vec_norm = np.linalg.norm(user_vec.dot(user_mat)+relation_vec-item_vec.dot(item_mat))
+    map_vec = self.relatioin_mapping_matrix[relation,:]
+    user_rel = user_vec-(map_vec.T.dot(user_vec))*map_vec
+    item_rel = item_vec-(map_vec.T.dot(item_vec))*map_vec
+    vec_norm = np.linalg.norm(user_rel+relation_vec-item_rel)
     return vec_norm**2
 
   def graident(self):
-    u = T.dvector('u')
-    i = T.dvector('i')
-    r = T.dvector('r')
-    r1 = T.dvector('r1')
-    u_rmap = T.dmatrix('u_rmap')
-    i_rmap = T.dmatrix('i_rmap')
-    u_r1map = T.dmatrix('u_r1map')
-    i_r1map = T.dmatrix('i_r1map')
+    p_user = T.iscalar('p_user')
+    p_item = T.iscalar('p_item')
+    p_relation = T.iscalar('p_relation')
+    n_relation = T.iscalar('n_relation')
+    u_zero = np.zeros((1,self.user_num))
+    i_zero = np.zeros((1,self.item_num))
+    n_r_zero = np.zeros((1,self.relation_num))
+    p_r_zero = np.zeros((1,self.relation_num))
+    i_zero[p_item],u_zero[p_user],p_r_zero[p_relation],n_r_zero[n_relation] = [1]*4
+    u = u_zero.dot(self.user_vec)
+    i = i_zero.dot(self.item_vec)
+    r = p_r_zero.dot(self.relation_vec)
+    r1 = n_r_zero.dot(self.relation_vec)
+    r_map = p_r_zero.dot(self.relatioin_mapping_matrix)
+    r1_map = n_r_zero.dot(self.relatioin_mapping_matrix)
     # construct theano expression graph
-    distance_part = T.sum((T.dot(u,u_rmap)+r-T.dot(i,i_rmap))**2)+self.margin-T.sum((T.dot(u,u_r1map)+r1-T.dot(i,i_r1map))**2)
-    regularizatoin = self.reg_param*(T.sum(u**2)+T.sum(i**2)+T.sum(r**2)+T.sum(r1**2)+T.sum(u_rmap**2)+T.sum(i_rmap**2)+T.sum(u_r1map**2)+T.sum(i_r1map**2))
+    ur = u-T.dot(T.transpose(r_map),u)*r_map
+    ur1 = u-T.dot(T.transpose(r1_map),u)*r1_map
+    ir = i-T.dot(T.transpose(r_map),i)*r_map
+    ir1 = i-T.dot(T.transpose(r1_map),i)*r1_map
+    distance_part = T.sum((ur+r-ir)**2)+self.margin-T.sum((ur1+r1-ir1)**2)
+    regularizatoin = self.reg_param*(T.sum(u**2)+T.sum(i**2)+T.sum(r**2)+T.sum(r1**2)+T.sum(r_map**2)+T.sum(r1_map**2))
     loss = distance_part+regularizatoin
-    gu,gi,gr,gr1,gu_rmap,gi_rmap,gu_r1map,gi_r1map = T.grad(loss,[u,i,r,r1,u_rmap,i_rmap,u_r1map,i_r1map])
-    dloss = theano.function(inputs=[u,i,r,r1,u_rmap,i_rmap,u_r1map,i_r1map],outputs=[gu,gi,gr,gr1,gu_rmap,gi_rmap,gu_r1map,gi_r1map])
+    gu,gi,gr,gr1,gr_map,gr1_map = T.grad(loss,[self.user_vec,self.item_vec,self.relation_vec])
+    updates = ((self.user_vec,self.user_vec-self.rate*gu),
+              ())
+    dloss = theano.function(inputs=[u,i,r,r1,r_map,r1_map,u_s,i_s,r_s,r1_s],outputs=[loss],updates=updates)
     return dloss
 
   def relation_part_g(self,relation,weight=1):
@@ -234,44 +241,17 @@ class Train(object):
         return m
 
   def SGD(self,p_user,p_item,p_relation,n_user,n_item,n_relation):
-    dloss = self.graident_function
-    p_user_vec = self.user_vec[p_user,:]
-    p_item_vec = self.item_vec[p_item,:]
-    p_relation_vec = self.relation_vec[p_relation,:]
-    n_relation_vec = self.relation_vec[n_relation,:]
-    p_user_mat = self.user_mapping_tensor[p_relation,:,:]
-    n_user_mat = self.user_mapping_tensor[n_relation,:,:]
-    p_item_mat = self.item_mapping_tensor[p_relation,:,:]
-    n_item_mat = self.item_mapping_tensor[n_relation,:,:]
-    dp_user,dp_item,dp_relation,dn_relation,dp_user_mat,dp_item_mat,dn_user_mat,dn_item_mat = dloss(p_user_vec,p_item_vec,p_relation_vec,n_relation_vec,p_user_mat,p_item_mat,n_user_mat,n_item_mat)
-    dp_relation -= self.relation_part_g(p_relation)
-    dn_relation -= self.relation_part_g(n_relation)
-    self.user_vec[p_user,:] -= self.rate*dp_user
-    self.item_vec[p_item,:] -= self.rate*dp_item
-    self.relation_vec[p_relation,:] -= self.rate*dp_relation
-    self.relation_vec[n_relation,:] -= self.rate*dn_relation
-    self.user_mapping_tensor[p_relation,:,:] -= self.rate*dp_user_mat
-    self.user_mapping_tensor[n_relation,:,:] -= self.rate*dn_user_mat
-    self.item_mapping_tensor[p_relation,:,:] -= self.rate*dp_item_mat
-    self.item_mapping_tensor[n_relation,:,:] -= self.rate*dn_item_mat
-    ## normlization
-    self.user_vec[p_user,:] /= np.linalg.norm(self.user_vec[p_user,:])
-    self.item_vec[p_item,:] /= np.linalg.norm(self.item_vec[p_item,:])
-    self.relation_vec[p_relation,:] /= np.linalg.norm(self.relation_vec[p_relation,:])
-    self.relation_vec[n_relation,:] /= np.linalg.norm(self.relation_vec[n_relation,:])
-    self.user_mapping_tensor[p_relation,:,:] /= np.linalg.norm(self.user_mapping_tensor[p_relation,:,:])
-    self.user_mapping_tensor[n_relation,:,:] /= np.linalg.norm(self.user_mapping_tensor[n_relation,:,:])
-    self.item_mapping_tensor[p_relation,:,:] /= np.linalg.norm(self.item_mapping_tensor[p_relation,:,:])
-    self.item_mapping_tensor[n_relation,:,:] /= np.linalg.norm(self.item_mapping_tensor[n_relation,:,:])
+    u_zero = np.zeros((1,self.user_num))
+    i_zero = np.zeros((1,self.item_num))
+    n_r_zero = np.zeros((1,self.relation_num))
+    p_r_zero = np.zeros((1,self.relation_num))
+    i_zero[p_item],u_zero[p_user],p_r_zero[p_relation],n_r_zero[n_relation] = [1]*4
+    p_user_v = u_zero.dot(self.user_vec)
+    p_item_v = i_zero.dot(self.item_vec)
+    p_relation_v = p_r_zero.dot(self.relation_vec)
+    n_relation_v = n_r_zero.dot(self.relation_vec)
 
-    # if np.linalg.norm(self.user_vec[p_user,:])>1: self.user_vec[p_user,:] /= np.linalg.norm(self.user_vec[p_user,:])
-    # if np.linalg.norm(self.item_vec[p_item,:])>1: self.item_vec[p_item,:] /= np.linalg.norm(self.item_vec[p_item,:])
-    # if np.linalg.norm(self.relation_vec[p_relation,:])>1: self.relation_vec[p_relation,:] /= np.linalg.norm(self.relation_vec[p_relation,:])
-    # if np.linalg.norm(self.relation_vec[n_relation,:])>1: self.relation_vec[n_relation,:] /= np.linalg.norm(self.relation_vec[n_relation,:])
-    # self.user_mapping_tensor[p_relation,:,:] = self.norm(self.user_vec[p_user,:],self.user_mapping_tensor[p_relation,:,:])
-    # self.user_mapping_tensor[n_relation,:,:] = self.norm(self.user_vec[p_user,:],self.user_mapping_tensor[n_relation,:,:])
-    # self.item_mapping_tensor[p_relation,:,:] = self.norm(self.item_vec[p_item,:],self.item_mapping_tensor[p_relation,:,:])
-    # self.item_mapping_tensor[n_relation,:,:] = self.norm(self.item_vec[p_item,:],self.item_mapping_tensor[n_relation,:,:])
+
 
 if __name__ == "__main__":
   user_dem = [[30,20,15],[20,20,20],[30,20,20],[20,20,30]]

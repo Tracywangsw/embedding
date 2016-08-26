@@ -36,3 +36,56 @@ class Data(object):
       id2seq_map[id] = seq
       seq += 1
     return id2seq_map
+
+  def train_user_items(self):
+    train_list = self.train_matrix.tolist()
+    return self.build_dic(train_list)
+
+  def test_user_items(self):
+    test_list = self.test_matrix.tolist()
+    return self.build_dic(test_list)
+
+  def build_dic(self,data_list):
+    dic = {}
+    for record in data_list:
+      user,item,rating = record[:3]
+      if self.userid2seq[user] not in dic:
+        # dic[self.userid2seq(user)] = [(self.itemid2seq[item],self.relation2seq[rating])]
+        dic[self.userid2seq[user]] = [self.itemid2seq[item]]
+      else:
+        # dic[self.userid2seq(user)].append((self.itemid2seq[item],self.relation2seq[rating]))
+        dic[self.userid2seq[user]].append(self.itemid2seq[item])
+    return dic
+
+# statistic the dataset
+class Stat(object):
+  """docstring for Stat"""
+  def __init__(self, arg):
+    self.data = Data()
+    
+  def count(self,matrix):
+    num = matrix.shape[0]
+    user_set = set()
+    item_set = set()
+    for i in range(num):
+      record = matrix[i,:]
+      user = self.data.userid2seq[record[0]]
+      item = self.data.itemid2seq[record[1]]
+      relation = self.data.relation2seq[record[2]]
+      if user not in user_set: user_set.add(user)
+      if item not in item_set: item_set.add(item)
+    return len(user_set),len(item_set)
+
+  def rating_distribution(self,rating_list):
+    r_dis = [0]*5
+    for r in rating_list:
+      seq = self.data.relation2seq[r]
+      r_dis[seq] += 1
+    return r_dis
+
+  def train_info(self):
+    m = self.data.train_matrix
+    user_num,item_num = self.count(m)
+    rating_list = m[:,1]
+    rating_dis = self.rating_distribution(rating_list)
+    
