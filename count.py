@@ -1,5 +1,5 @@
 data_list = []
-with open('ml-10M100K/ratings.dat','r') as f:
+with open('data/ratings.dat','r') as f:
   for row in f:
     row = row.strip()
     data_list.append(row.split('|'))

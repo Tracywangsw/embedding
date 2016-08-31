@@ -56,10 +56,14 @@ class Train(object):
 
   def run(self,path):
     nepoch = 100
-    predict_init,dis_init = self.predict()
-    res_log = [[self.loss]+predict_init+dis_init]
-    print('time:'+str(datetime.now())+' epoch:'+str(0)+' loss:'+str(self.loss)+' precision:'+str(predict_init))
-    print('hit rating ratio(from 1 to 5):'+str(dis_init))
+    rating_precision = ['rating '+str(i)+' precision' for i in range(1,6)]
+    rating_recall = ['rating '+str(i)+' recall' for i in range(1,6)]
+    rating_f = ['rating '+str(i)+' f' for i in range(1,6)]
+    res_log = [['loss','average precision']+rating_precision+rating_recall+rating_f]
+    avg_predict_init,r_precision_init,r_recall_init,r_fvalue_init = self.predict()
+    res_log.append([self.loss]+avg_predict_init+r_precision_init+r_recall_init+r_fvalue_init)
+    print('time:'+str(datetime.now())+' epoch:'+str(0)+' loss:'+str(self.loss)+' precision:'+str(avg_predict_init))
+    print('hit rating ratio(from 1 to 5):'+str(r_fvalue_init))
     # predict_init = self.top_item_recommend()
     # res_log = [[self.loss,predict_init]]
     # print('time:'+str(datetime.now())+' epoch:'+str(0)+' loss:'+str(self.loss)+' precision:'+str(predict_init))
@@ -79,10 +83,10 @@ class Train(object):
           self.loss += p_distance+self.margin-n_distance
           self.SGD(p_user,p_item,p_relation,n_user,n_item,n_relation)
       self.loss /= self.train_num
-      precision,dis = self.predict()
-      print('time:'+str(datetime.now())+' epoch:'+str(epoch+1)+' loss:'+str(self.loss)+' precision:'+str(precision))
-      print('hit rating ratio(from 1 to 5):'+str(dis))
-      res_log.append([self.loss]+precision+dis)
+      avg_precision,r_precision,r_recall,r_fvalue = self.predict()
+      print('time:'+str(datetime.now())+' epoch:'+str(epoch+1)+' loss:'+str(self.loss)+' average precision:'+str(avg_precision))
+      print('fvalue(rating from 1 to 5):'+str(r_fvalue))
+      res_log.append([self.loss]+avg_precision+r_precision+r_recall+r_fvalue)
       # precision = self.top_item_recommend()
       # print('time:'+str(datetime.now())+' epoch:'+str(epoch)+' loss:'+str(self.loss)+' precision:'+str(precision))
       # res_log.append([self.loss,precision])
@@ -104,6 +108,7 @@ class Train(object):
     precision = np.array([0]*n,dtype='double')
     hit_relations = [0]*5
     test_relations = [0]*5
+    predict_dis = [0]*5
     hit = 0
     for i in range(self.test_num):
       test_tuple = data.test_matrix[i,:]
@@ -113,14 +118,17 @@ class Train(object):
       test_relations[relation] += 1
       for top in range(n):
         rels = self.res_relations(user,item,top+1)
+        predict_dis[rels[0]] += 1
         if relation in rels:
           hit += 1
           hit_relations[relation] += 1
           precision[top] += 1
     precision /= self.test_num
-    hit_relation_precision = [float(r[0])/r[1] for r in zip(hit_relations,test_relations)]
+    hit_relation_recall = [float(r[0])/r[1] for r in zip(hit_relations,test_relations)]
+    hit_relation_precision = [float(r[0])/(r[1]) for r in zip(hit_relations,predict_dis)]
+    hit_relation_f = [r[0]*r[1] for r in zip(hit_relation_precision,hit_relation_recall)]
     # hit_relation_precision = [float(r)/hit for r in hit_relations]
-    return precision.tolist(),hit_relation_precision
+    return precision.tolist(),hit_relation_precision,hit_relation_recall,hit_relation_f
 
   def new_items(self,all,old):
     new = set()
@@ -255,23 +263,23 @@ class Train(object):
     self.item_mapping_tensor[p_relation,:,:] -= self.rate*dp_item_mat
     self.item_mapping_tensor[n_relation,:,:] -= self.rate*dn_item_mat
     ## normlization
-    self.user_vec[p_user,:] /= np.linalg.norm(self.user_vec[p_user,:])
-    self.item_vec[p_item,:] /= np.linalg.norm(self.item_vec[p_item,:])
-    self.relation_vec[p_relation,:] /= np.linalg.norm(self.relation_vec[p_relation,:])
-    self.relation_vec[n_relation,:] /= np.linalg.norm(self.relation_vec[n_relation,:])
-    self.user_mapping_tensor[p_relation,:,:] /= np.linalg.norm(self.user_mapping_tensor[p_relation,:,:])
-    self.user_mapping_tensor[n_relation,:,:] /= np.linalg.norm(self.user_mapping_tensor[n_relation,:,:])
-    self.item_mapping_tensor[p_relation,:,:] /= np.linalg.norm(self.item_mapping_tensor[p_relation,:,:])
-    self.item_mapping_tensor[n_relation,:,:] /= np.linalg.norm(self.item_mapping_tensor[n_relation,:,:])
+    # self.user_vec[p_user,:] /= np.linalg.norm(self.user_vec[p_user,:])
+    # self.item_vec[p_item,:] /= np.linalg.norm(self.item_vec[p_item,:])
+    # self.relation_vec[p_relation,:] /= np.linalg.norm(self.relation_vec[p_relation,:])
+    # self.relation_vec[n_relation,:] /= np.linalg.norm(self.relation_vec[n_relation,:])
+    # self.user_mapping_tensor[p_relation,:,:] /= np.linalg.norm(self.user_mapping_tensor[p_relation,:,:])
+    # self.user_mapping_tensor[n_relation,:,:] /= np.linalg.norm(self.user_mapping_tensor[n_relation,:,:])
+    # self.item_mapping_tensor[p_relation,:,:] /= np.linalg.norm(self.item_mapping_tensor[p_relation,:,:])
+    # self.item_mapping_tensor[n_relation,:,:] /= np.linalg.norm(self.item_mapping_tensor[n_relation,:,:])
 
-    # if np.linalg.norm(self.user_vec[p_user,:])>1: self.user_vec[p_user,:] /= np.linalg.norm(self.user_vec[p_user,:])
-    # if np.linalg.norm(self.item_vec[p_item,:])>1: self.item_vec[p_item,:] /= np.linalg.norm(self.item_vec[p_item,:])
-    # if np.linalg.norm(self.relation_vec[p_relation,:])>1: self.relation_vec[p_relation,:] /= np.linalg.norm(self.relation_vec[p_relation,:])
-    # if np.linalg.norm(self.relation_vec[n_relation,:])>1: self.relation_vec[n_relation,:] /= np.linalg.norm(self.relation_vec[n_relation,:])
-    # self.user_mapping_tensor[p_relation,:,:] = self.norm(self.user_vec[p_user,:],self.user_mapping_tensor[p_relation,:,:])
-    # self.user_mapping_tensor[n_relation,:,:] = self.norm(self.user_vec[p_user,:],self.user_mapping_tensor[n_relation,:,:])
-    # self.item_mapping_tensor[p_relation,:,:] = self.norm(self.item_vec[p_item,:],self.item_mapping_tensor[p_relation,:,:])
-    # self.item_mapping_tensor[n_relation,:,:] = self.norm(self.item_vec[p_item,:],self.item_mapping_tensor[n_relation,:,:])
+    if np.linalg.norm(self.user_vec[p_user,:])>1: self.user_vec[p_user,:] /= np.linalg.norm(self.user_vec[p_user,:])
+    if np.linalg.norm(self.item_vec[p_item,:])>1: self.item_vec[p_item,:] /= np.linalg.norm(self.item_vec[p_item,:])
+    if np.linalg.norm(self.relation_vec[p_relation,:])>1: self.relation_vec[p_relation,:] /= np.linalg.norm(self.relation_vec[p_relation,:])
+    if np.linalg.norm(self.relation_vec[n_relation,:])>1: self.relation_vec[n_relation,:] /= np.linalg.norm(self.relation_vec[n_relation,:])
+    self.user_mapping_tensor[p_relation,:,:] = self.norm(self.user_vec[p_user,:],self.user_mapping_tensor[p_relation,:,:])
+    self.user_mapping_tensor[n_relation,:,:] = self.norm(self.user_vec[p_user,:],self.user_mapping_tensor[n_relation,:,:])
+    self.item_mapping_tensor[p_relation,:,:] = self.norm(self.item_vec[p_item,:],self.item_mapping_tensor[p_relation,:,:])
+    self.item_mapping_tensor[n_relation,:,:] = self.norm(self.item_vec[p_item,:],self.item_mapping_tensor[n_relation,:,:])
 
 if __name__ == "__main__":
   user_dem = [[30,20,15],[20,20,20],[30,20,20],[20,20,30]]
@@ -281,4 +289,4 @@ if __name__ == "__main__":
       rr = Train(d[0],d[1],d[2],1,r,0.001)
       filename = str(d+[r])+'.csv'
       print(filename)
-      rr.run('result/TransR/'+filename)
+      rr.run('result/TransR/f/'+filename)
