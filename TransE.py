@@ -70,7 +70,7 @@ class Train(object):
       precision,dis = self.predict()
       print('time:'+str(datetime.now())+' epoch:'+str(epoch+1)+' loss:'+str(self.loss)+' precision:'+str(precision))
       print('hit rating ratio(from 1 to 5):'+str(dis))
-      res_log.append([self.loss]+precision.tolist())
+      res_log.append([self.loss]+precision+dis)
     with open(path,'w') as f:
       a = csv.writer(f,delimiter=',')
       a.writerows(res_log)
